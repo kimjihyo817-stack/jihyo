@@ -1,164 +1,194 @@
-# =====================================
-# Study Cafe Kiosk System (Pro Version)
-# SignUp + Login + Seat + Logout
-# Google Colab Compatible
-# =====================================
+// =====================================
+// Study Cafe Kiosk System (Pro Version)
+// SignUp + Login + Seat + Logout
+// Node.js Console
+// =====================================
 
-ROWS, COLS = 5, 6
-EMPTY, USED = 0, 1
+const readline = require("readline");
 
-# 사용자 데이터
-users = {
-    "admin": "0000"
+const rl = readline.createInterface({
+  input: process.stdin,
+  output: process.stdout
+});
+
+const ROWS = 5;
+const COLS = 6;
+const EMPTY = 0;
+const USED = 1;
+
+// 사용자 데이터
+const users = {
+  admin: "0000"
+};
+
+// 좌석 상태
+const seats = Array.from({ length: ROWS }, () =>
+  Array(COLS).fill(EMPTY)
+);
+
+// 사용자별 좌석 기록
+const userSeat = {}; // { userId: [r, c] }
+
+// ---------- 입력 유틸 ----------
+function ask(question) {
+  return new Promise(resolve => rl.question(question, resolve));
 }
 
-# 좌석 상태
-seats = [[EMPTY for _ in range(COLS)] for _ in range(ROWS)]
+// ---------- 회원가입 ----------
+async function signup() {
+  console.log("\n📝 회원가입");
+  while (true) {
+    const userId = await ask("새 ID 입력 (취소: 0): ");
+    if (userId === "0") return;
 
-# 사용자별 좌석 기록
-user_seat = {}   # { user_id : (r, c) }
+    if (users[userId]) {
+      console.log("❌ 이미 존재하는 ID입니다.");
+      continue;
+    }
 
-# ---------- 회원가입 ----------
-def signup():
-    print("\n📝 회원가입")
-    while True:
-        user_id = input("새 ID 입력 (취소: 0): ")
-        if user_id == "0":
-            return
-        if user_id in users:
-            print("❌ 이미 존재하는 ID입니다.")
-            continue
+    const password = await ask("새 PW 입력: ");
+    users[userId] = password;
+    console.log(`✅ 회원가입 완료! (${userId})`);
+    return;
+  }
+}
 
-        password = input("새 PW 입력: ")
-        users[user_id] = password
-        print(f"✅ 회원가입 완료! ({user_id})")
-        return
+// ---------- 로그인 ----------
+async function login() {
+  console.log("\n🔐 로그인");
+  for (let i = 0; i < 3; i++) {
+    const userId = await ask("ID 입력: ");
+    const password = await ask("PW 입력: ");
 
-# ---------- 로그인 ----------
-def login():
-    print("\n🔐 로그인")
-    for _ in range(3):
-        user_id = input("ID 입력: ")
-        password = input("PW 입력: ")
+    if (users[userId] && users[userId] === password) {
+      console.log(`✅ ${userId}님 환영합니다.`);
+      return userId;
+    } else {
+      console.log("❌ ID 또는 PW가 틀렸습니다.");
+    }
+  }
+  console.log("🚫 로그인 실패");
+  return null;
+}
 
-        if user_id in users and users[user_id] == password:
-            print(f"✅ {user_id}님 환영합니다.")
-            return user_id
-        else:
-            print("❌ ID 또는 PW가 틀렸습니다.")
+// ---------- 좌석 출력 ----------
+function displaySeats() {
+  console.log("\n===== 좌석 현황 =====");
+  console.log("□ : 빈 좌석   ■ : 사용 중");
 
-    print("🚫 로그인 실패")
-    return None
+  let header = "    ";
+  for (let c = 1; c <= COLS; c++) header += c + " ";
+  console.log(header);
 
-# ---------- 좌석 출력 ----------
-def display_seats():
-    print("\n===== 좌석 현황 =====")
-    print("□ : 빈 좌석   ■ : 사용 중")
-    print("    ", end="")
-    for c in range(COLS):
-        print(f"{c+1} ", end="")
-    print()
+  for (let r = 0; r < ROWS; r++) {
+    let row = `${r + 1}   `;
+    for (let c = 0; c < COLS; c++) {
+      row += seats[r][c] === EMPTY ? "□ " : "■ ";
+    }
+    console.log(row);
+  }
+  console.log("=====================");
+}
 
-    for r in range(ROWS):
-        print(f"{r+1}   ", end="")
-        for c in range(COLS):
-            print("□ " if seats[r][c] == EMPTY else "■ ", end="")
-        print()
-    print("=====================")
+// ---------- 좌석 선택 ----------
+async function selectSeat(user) {
+  if (userSeat[user]) {
+    console.log("❌ 이미 좌석을 이용 중입니다.");
+    return;
+  }
 
-# ---------- 좌석 선택 ----------
-def select_seat(user):
-    if user in user_seat:
-        print("❌ 이미 좌석을 이용 중입니다.")
-        return
+  while (true) {
+    const rInput = await ask("행 번호 입력 (취소: 0): ");
+    const r = Number(rInput);
 
-    while True:
-        try:
-            r = int(input("행 번호 입력 (취소: 0): "))
-            if r == 0:
-                return
+    if (r === 0) return;
 
-            c = int(input("열 번호 입력: "))
-            r -= 1
-            c -= 1
+    const c = Number(await ask("열 번호 입력: "));
 
-            if r < 0 or c < 0 or r >= ROWS or c >= COLS:
-                print("❌ 존재하지 않는 좌석입니다.")
-                continue
+    const row = r - 1;
+    const col = c - 1;
 
-            if seats[r][c] == USED:
-                print("❌ 이미 사용 중인 좌석입니다.")
-                continue
+    if (
+      row < 0 || col < 0 ||
+      row >= ROWS || col >= COLS
+    ) {
+      console.log("❌ 존재하지 않는 좌석입니다.");
+      continue;
+    }
 
-            seats[r][c] = USED
-            user_seat[user] = (r, c)
-            print(f"✅ 좌석 배정 완료 ({user})")
-            return
+    if (seats[row][col] === USED) {
+      console.log("❌ 이미 사용 중인 좌석입니다.");
+      continue;
+    }
 
-        except ValueError:
-            print("❌ 숫자만 입력하세요.")
+    seats[row][col] = USED;
+    userSeat[user] = [row, col];
+    console.log(`✅ 좌석 배정 완료 (${user})`);
+    return;
+  }
+}
 
-# ---------- 로그아웃 ----------
-def logout(user):
-    if user in user_seat:
-        r, c = user_seat[user]
-        seats[r][c] = EMPTY
-        del user_seat[user]
-        print("🔓 로그아웃 완료 (좌석 해제됨)")
-    else:
-        print("ℹ️ 사용 중인 좌석이 없습니다.")
+// ---------- 로그아웃 ----------
+function logout(user) {
+  if (userSeat[user]) {
+    const [r, c] = userSeat[user];
+    seats[r][c] = EMPTY;
+    delete userSeat[user];
+    console.log("🔓 로그아웃 완료 (좌석 해제됨)");
+  } else {
+    console.log("ℹ️ 사용 중인 좌석이 없습니다.");
+  }
+}
 
-# ---------- 사용자 메뉴 ----------
-def user_menu(user):
-    while True:
-        print(f"\n👤 {user}님 메뉴")
-        print("1. 좌석 선택")
-        print("2. 로그아웃 (자리 반납)")
-        print("0. 메인 화면")
+// ---------- 사용자 메뉴 ----------
+async function userMenu(user) {
+  while (true) {
+    console.log(`\n👤 ${user}님 메뉴`);
+    console.log("1. 좌석 선택");
+    console.log("2. 로그아웃 (자리 반납)");
+    console.log("0. 메인 화면");
 
-        choice = input("선택: ")
+    const choice = await ask("선택: ");
 
-        if choice == "1":
-            display_seats()
-            select_seat(user)
+    if (choice === "1") {
+      displaySeats();
+      await selectSeat(user);
+    } else if (choice === "2") {
+      logout(user);
+      return;
+    } else if (choice === "0") {
+      return;
+    } else {
+      console.log("❌ 올바른 메뉴를 선택하세요.");
+    }
+  }
+}
 
-        elif choice == "2":
-            logout(user)
-            return
+// ---------- 메인 ----------
+async function runKiosk() {
+  console.log("📌 스터디카페 키오스크 시작");
 
-        elif choice == "0":
-            return
+  while (true) {
+    console.log("\n=== 메인 화면 ===");
+    console.log("1. 로그인");
+    console.log("2. 회원가입");
+    console.log("0. 종료");
 
-        else:
-            print("❌ 올바른 메뉴를 선택하세요.")
+    const choice = await ask("선택: ");
 
-# ---------- 메인 키오스크 ----------
-def run_kiosk():
-    print("📌 스터디카페 키오스크 시작")
+    if (choice === "1") {
+      const user = await login();
+      if (user) await userMenu(user);
+    } else if (choice === "2") {
+      await signup();
+    } else if (choice === "0") {
+      console.log("이용해주셔서 감사합니다.");
+      rl.close();
+      break;
+    } else {
+      console.log("❌ 올바른 메뉴를 선택하세요.");
+    }
+  }
+}
 
-    while True:
-        print("\n=== 메인 화면 ===")
-        print("1. 로그인")
-        print("2. 회원가입")
-        print("0. 종료")
-
-        choice = input("선택: ")
-
-        if choice == "1":
-            user = login()
-            if user:
-                user_menu(user)
-
-        elif choice == "2":
-            signup()
-
-        elif choice == "0":
-            print("이용해주셔서 감사합니다.")
-            break
-
-        else:
-            print("❌ 올바른 메뉴를 선택하세요.")
-
-# 실행
-run_kiosk()
-
+runKiosk();
