@@ -21,6 +21,9 @@ if "user_seat" not in st.session_state:
 if "login_user" not in st.session_state:
     st.session_state.login_user = None
 
+if "select_mode" not in st.session_state:
+    st.session_state.select_mode = False
+
 # =====================
 # 함수 영역
 # =====================
@@ -28,9 +31,10 @@ if "login_user" not in st.session_state:
 # 🔓 화면 전환용 로그아웃 (좌석 유지)
 def logout_only():
     st.session_state.login_user = None
+    st.session_state.select_mode = False
     st.rerun()
 
-# 🪑 좌석 선택 (키오스크 핵심)
+# 🪑 좌석 선택 확정
 def select_seat(r, c):
     user = st.session_state.login_user
 
@@ -44,12 +48,19 @@ def select_seat(r, c):
     st.success(f"{user}님 좌석 배정 완료!")
     st.info("다음 이용자를 위해 화면이 초기화됩니다.")
 
-    # 좌석은 유지, 로그인만 해제
     logout_only()
 
-# 🪑 좌석 표시
+# 🪑 좌석 선택 화면
 def show_seats():
-    st.subheader("좌석 선택 (□: 빈 좌석 / ■: 사용 중)")
+    st.subheader("좌석 선택")
+
+    # ⬅ 뒤로가기 버튼
+    if st.button("⬅ 뒤로가기"):
+        st.session_state.select_mode = False
+        st.rerun()
+
+    st.caption("□ : 빈 좌석 / ■ : 사용 중")
+
     for r in range(ROWS):
         cols = st.columns(COLS)
         for c in range(COLS):
@@ -58,7 +69,7 @@ def show_seats():
             else:
                 cols[c].button("■", disabled=True, key=f"{r}-{c}")
 
-# 🚪 퇴실 처리 (자리 반납)
+# 🚪 퇴실 처리
 def checkout(user_id):
     if user_id in st.session_state.user_seat:
         r, c = st.session_state.user_seat[user_id]
@@ -76,13 +87,25 @@ st.title("📌 스터디카페 키오스크")
 # ---------- 로그인 상태 ----------
 if st.session_state.login_user:
     st.info(f"👤 현재 사용자: {st.session_state.login_user}")
-    show_seats()
+
+    # 이미 좌석 사용 중
+    if st.session_state.login_user in st.session_state.user_seat:
+        st.success("이미 좌석이 배정되어 있습니다.")
+        st.button("로그아웃", on_click=logout_only)
+
+    # 좌석 선택 모드
+    elif st.session_state.select_mode:
+        show_seats()
+
+    # 로그인 후 메인 화면
+    else:
+        st.button("좌석 선택", on_click=lambda: st.session_state.update({"select_mode": True}))
+        st.button("로그아웃", on_click=logout_only)
 
 # ---------- 비로그인 ----------
 else:
     menu = st.radio("메뉴 선택", ["로그인", "회원가입", "퇴실(관리자)"])
 
-    # 🔐 로그인
     if menu == "로그인":
         uid = st.text_input("ID")
         pw = st.text_input("PW", type="password")
@@ -90,11 +113,11 @@ else:
         if st.button("로그인"):
             if uid in st.session_state.users and st.session_state.users[uid] == pw:
                 st.session_state.login_user = uid
+                st.session_state.select_mode = False
                 st.rerun()
             else:
                 st.error("ID 또는 PW가 틀렸습니다.")
 
-    # 📝 회원가입
     elif menu == "회원가입":
         uid = st.text_input("새 ID")
         pw = st.text_input("새 PW", type="password")
@@ -108,10 +131,7 @@ else:
                 st.session_state.users[uid] = pw
                 st.success("회원가입 완료! 로그인해주세요.")
 
-    # 🚪 퇴실 (관리자/퇴실 키오스크)
     else:
-        st.subheader("퇴실 처리")
         out_id = st.text_input("퇴실할 ID")
-
         if st.button("퇴실"):
             checkout(out_id)
