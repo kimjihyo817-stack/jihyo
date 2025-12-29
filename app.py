@@ -1,194 +1,110 @@
-// =====================================
-// Study Cafe Kiosk System (Pro Version)
-// SignUp + Login + Seat + Logout
-// Node.js Console
-// =====================================
+import streamlit as st
 
-const readline = require("readline");
+# =====================
+# 기본 설정
+# =====================
+ROWS, COLS = 5, 6
+EMPTY, USED = 0, 1
 
-const rl = readline.createInterface({
-  input: process.stdin,
-  output: process.stdout
-});
+# =====================
+# 세션 상태 초기화
+# =====================
+if "users" not in st.session_state:
+    st.session_state.users = {"admin": "0000"}
 
-const ROWS = 5;
-const COLS = 6;
-const EMPTY = 0;
-const USED = 1;
+if "seats" not in st.session_state:
+    st.session_state.seats = [[EMPTY for _ in range(COLS)] for _ in range(ROWS)]
 
-// 사용자 데이터
-const users = {
-  admin: "0000"
-};
+if "user_seat" not in st.session_state:
+    st.session_state.user_seat = {}  # {user_id: (r, c)}
 
-// 좌석 상태
-const seats = Array.from({ length: ROWS }, () =>
-  Array(COLS).fill(EMPTY)
-);
+if "login_user" not in st.session_state:
+    st.session_state.login_user = None
 
-// 사용자별 좌석 기록
-const userSeat = {}; // { userId: [r, c] }
+# =====================
+# 좌석 표시 함수
+# =====================
+def show_seats():
+    st.subheader("좌석 현황 (□: 빈 좌석 / ■: 사용 중)")
+    for r in range(ROWS):
+        cols = st.columns(COLS)
+        for c in range(COLS):
+            if st.session_state.seats[r][c] == EMPTY:
+                if cols[c].button("□", key=f"{r}-{c}"):
+                    select_seat(r, c)
+            else:
+                cols[c].button("■", disabled=True, key=f"{r}-{c}")
 
-// ---------- 입력 유틸 ----------
-function ask(question) {
-  return new Promise(resolve => rl.question(question, resolve));
-}
+# =====================
+# 좌석 선택
+# =====================
+def select_seat(r, c):
+    user = st.session_state.login_user
 
-// ---------- 회원가입 ----------
-async function signup() {
-  console.log("\n📝 회원가입");
-  while (true) {
-    const userId = await ask("새 ID 입력 (취소: 0): ");
-    if (userId === "0") return;
+    if user in st.session_state.user_seat:
+        st.warning("이미 좌석을 사용 중입니다.")
+        return
 
-    if (users[userId]) {
-      console.log("❌ 이미 존재하는 ID입니다.");
-      continue;
-    }
+    st.session_state.seats[r][c] = USED
+    st.session_state.user_seat[user] = (r, c)
+    st.success(f"{user}님 좌석이 배정되었습니다.")
 
-    const password = await ask("새 PW 입력: ");
-    users[userId] = password;
-    console.log(`✅ 회원가입 완료! (${userId})`);
-    return;
-  }
-}
+# =====================
+# 로그아웃
+# =====================
+def logout():
+    user = st.session_state.login_user
 
-// ---------- 로그인 ----------
-async function login() {
-  console.log("\n🔐 로그인");
-  for (let i = 0; i < 3; i++) {
-    const userId = await ask("ID 입력: ");
-    const password = await ask("PW 입력: ");
+    if user in st.session_state.user_seat:
+        r, c = st.session_state.user_seat[user]
+        st.session_state.seats[r][c] = EMPTY
+        del st.session_state.user_seat[user]
 
-    if (users[userId] && users[userId] === password) {
-      console.log(`✅ ${userId}님 환영합니다.`);
-      return userId;
-    } else {
-      console.log("❌ ID 또는 PW가 틀렸습니다.");
-    }
-  }
-  console.log("🚫 로그인 실패");
-  return null;
-}
+    st.session_state.login_user = None
+    st.success("로그아웃 완료 (좌석 반납됨)")
+    st.rerun()
 
-// ---------- 좌석 출력 ----------
-function displaySeats() {
-  console.log("\n===== 좌석 현황 =====");
-  console.log("□ : 빈 좌석   ■ : 사용 중");
+# =====================
+# 메인 화면
+# =====================
+st.title("📌 스터디카페 웹 키오스크")
 
-  let header = "    ";
-  for (let c = 1; c <= COLS; c++) header += c + " ";
-  console.log(header);
+# ---------- 로그인 상태 ----------
+if st.session_state.login_user:
+    st.info(f"👤 로그인 사용자: {st.session_state.login_user}")
 
-  for (let r = 0; r < ROWS; r++) {
-    let row = `${r + 1}   `;
-    for (let c = 0; c < COLS; c++) {
-      row += seats[r][c] === EMPTY ? "□ " : "■ ";
-    }
-    console.log(row);
-  }
-  console.log("=====================");
-}
+    show_seats()
 
-// ---------- 좌석 선택 ----------
-async function selectSeat(user) {
-  if (userSeat[user]) {
-    console.log("❌ 이미 좌석을 이용 중입니다.");
-    return;
-  }
+    st.button("🔓 로그아웃", on_click=logout)
 
-  while (true) {
-    const rInput = await ask("행 번호 입력 (취소: 0): ");
-    const r = Number(rInput);
+# ---------- 비로그인 ----------
+else:
+    menu = st.radio("메뉴 선택", ["로그인", "회원가입"])
 
-    if (r === 0) return;
+    # 로그인
+    if menu == "로그인":
+        user_id = st.text_input("ID")
+        password = st.text_input("PW", type="password")
 
-    const c = Number(await ask("열 번호 입력: "));
+        if st.button("로그인"):
+            if user_id in st.session_state.users and st.session_state.users[user_id] == password:
+                st.session_state.login_user = user_id
+                st.success("로그인 성공")
+                st.rerun()
+            else:
+                st.error("ID 또는 PW가 틀렸습니다.")
 
-    const row = r - 1;
-    const col = c - 1;
+    # 회원가입
+    else:
+        new_id = st.text_input("새 ID")
+        new_pw = st.text_input("새 PW", type="password")
 
-    if (
-      row < 0 || col < 0 ||
-      row >= ROWS || col >= COLS
-    ) {
-      console.log("❌ 존재하지 않는 좌석입니다.");
-      continue;
-    }
+        if st.button("회원가입"):
+            if new_id in st.session_state.users:
+                st.error("이미 존재하는 ID입니다.")
+            elif new_id == "" or new_pw == "":
+                st.warning("ID와 PW를 모두 입력하세요.")
+            else:
+                st.session_state.users[new_id] = new_pw
+                st.success("회원가입 완료! 로그인해주세요.")
 
-    if (seats[row][col] === USED) {
-      console.log("❌ 이미 사용 중인 좌석입니다.");
-      continue;
-    }
-
-    seats[row][col] = USED;
-    userSeat[user] = [row, col];
-    console.log(`✅ 좌석 배정 완료 (${user})`);
-    return;
-  }
-}
-
-// ---------- 로그아웃 ----------
-function logout(user) {
-  if (userSeat[user]) {
-    const [r, c] = userSeat[user];
-    seats[r][c] = EMPTY;
-    delete userSeat[user];
-    console.log("🔓 로그아웃 완료 (좌석 해제됨)");
-  } else {
-    console.log("ℹ️ 사용 중인 좌석이 없습니다.");
-  }
-}
-
-// ---------- 사용자 메뉴 ----------
-async function userMenu(user) {
-  while (true) {
-    console.log(`\n👤 ${user}님 메뉴`);
-    console.log("1. 좌석 선택");
-    console.log("2. 로그아웃 (자리 반납)");
-    console.log("0. 메인 화면");
-
-    const choice = await ask("선택: ");
-
-    if (choice === "1") {
-      displaySeats();
-      await selectSeat(user);
-    } else if (choice === "2") {
-      logout(user);
-      return;
-    } else if (choice === "0") {
-      return;
-    } else {
-      console.log("❌ 올바른 메뉴를 선택하세요.");
-    }
-  }
-}
-
-// ---------- 메인 ----------
-async function runKiosk() {
-  console.log("📌 스터디카페 키오스크 시작");
-
-  while (true) {
-    console.log("\n=== 메인 화면 ===");
-    console.log("1. 로그인");
-    console.log("2. 회원가입");
-    console.log("0. 종료");
-
-    const choice = await ask("선택: ");
-
-    if (choice === "1") {
-      const user = await login();
-      if (user) await userMenu(user);
-    } else if (choice === "2") {
-      await signup();
-    } else if (choice === "0") {
-      console.log("이용해주셔서 감사합니다.");
-      rl.close();
-      break;
-    } else {
-      console.log("❌ 올바른 메뉴를 선택하세요.");
-    }
-  }
-}
-
-runKiosk();
