@@ -1,137 +1,162 @@
 import streamlit as st
+import streamlit.components.v1 as components
 
-# =====================
-# 기본 설정
-# =====================
-ROWS, COLS = 5, 6
-EMPTY, USED = 0, 1
+# 1. 페이지 설정 (IPython 관련 코드는 모두 삭제했습니다)
+st.set_page_config(page_title="오목 프로젝트", layout="centered")
 
-# =====================
-# 세션 상태 초기화
-# =====================
-if "users" not in st.session_state:
-    st.session_state.users = {"admin": "0000"}
+st.title("🎮 진로 탐구: 오목 게임 웹 앱")
+st.write("JavaScript Canvas와 Streamlit을 결합한 프로그래밍 프로젝트")
 
-if "seats" not in st.session_state:
-    st.session_state.seats = [[EMPTY for _ in range(COLS)] for _ in range(ROWS)]
+# 2. HTML/JS 소스 코드
+omok_html = """
+<div id="game-container" style="display: flex; flex-direction: column; align-items: center; font-family: sans-serif;">
+    <div style="display: flex; gap: 30px; margin-bottom: 15px; background: #eee; padding: 10px 30px; border-radius: 50px; box-shadow: inset 0 2px 5px rgba(0,0,0,0.1);">
+        <div style="text-align: center;">
+            <div style="font-size: 0.8em; color: #666;">BLACK</div>
+            <div id="score-black" style="font-size: 1.8em; font-weight: bold; color: #000;">0</div>
+        </div>
+        <div style="font-size: 1.5em; font-weight: bold; color: #aaa; align-self: center;">:</div>
+        <div style="text-align: center;">
+            <div style="font-size: 0.8em; color: #666;">WHITE</div>
+            <div id="score-white" style="font-size: 1.8em; font-weight: bold; color: #444;">0</div>
+        </div>
+    </div>
 
-if "user_seat" not in st.session_state:
-    st.session_state.user_seat = {}  # {user_id: (r, c)}
+    <div style="display: flex; gap: 20px; margin-bottom: 10px;">
+        <div id="status" style="font-weight: bold; font-size: 1.2em; color: #333;">흑색 차례입니다.</div>
+        <div style="padding: 5px 15px; border: 2px solid #d9534f; border-radius: 5px; background: #fff;">
+            <span style="font-size: 0.9em; color: #666;">남은 시간: </span>
+            <span id="timer" style="font-size: 1.2em; font-weight: bold; color: #d9534f;">30</span>초
+        </div>
+    </div>
+    
+    <div style="position: relative;">
+        <canvas id="board" width="450" height="450" style="background: #ffce9e; border: 3px solid #444; cursor: crosshair;"></canvas>
+        <div id="win-overlay" style="display: none; position: absolute; top: 0; left: 0; width: 450px; height: 450px; background: rgba(0,0,0,0.6); flex-direction: column; justify-content: center; align-items: center; z-index: 10;">
+            <div id="win-text" style="color: white; font-size: 2.5em; font-weight: bold; margin-bottom: 20px; text-align: center;"></div>
+            <button onclick="resetGame()" style="padding: 10px 30px; font-size: 1.2em; cursor: pointer; background: #28a745; color: white; border: none; border-radius: 5px;">다음 판 하기</button>
+        </div>
+    </div>
+    
+    <button onclick="resetTotalScore()" style="margin-top: 20px; padding: 8px 15px; color: #666; background: #fff; border: 1px solid #ccc; cursor: pointer;">스코어 초기화</button>
+</div>
 
-if "login_user" not in st.session_state:
-    st.session_state.login_user = None
+<script>
+    const canvas = document.getElementById('board');
+    const ctx = canvas.getContext('2d');
+    const status = document.getElementById('status');
+    const timerDisplay = document.getElementById('timer');
+    const winOverlay = document.getElementById('win-overlay');
+    const winText = document.getElementById('win-text');
+    const scoreBlackDisplay = document.getElementById('score-black');
+    const scoreWhiteDisplay = document.getElementById('score-white');
+    
+    const size = 15;
+    const cellSize = 30;
+    const padding = 15;
+    const LIMIT_TIME = 30;
+    
+    let board = Array.from({ length: size }, () => Array(size).fill(0));
+    let turn = 1; 
+    let gameOver = false;
+    let timeLeft = LIMIT_TIME;
+    let timerInterval = null;
+    let scoreBlack = 0;
+    let scoreWhite = 0;
 
-if "select_mode" not in st.session_state:
-    st.session_state.select_mode = False
+    function drawBoard() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.strokeStyle = '#444';
+        for (let i = 0; i < size; i++) {
+            ctx.beginPath();
+            ctx.moveTo(padding, padding + i * cellSize);
+            ctx.lineTo(padding + (size - 1) * cellSize, padding + i * cellSize);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(padding + i * cellSize, padding);
+            ctx.lineTo(padding + i * cellSize, padding + (size - 1) * cellSize);
+            ctx.stroke();
+        }
+    }
 
-# =====================
-# 함수 영역
-# =====================
+    function drawStone(row, col, color) {
+        ctx.beginPath();
+        ctx.arc(padding + col * cellSize, padding + row * cellSize, 13, 0, Math.PI * 2);
+        const grad = ctx.createRadialGradient(padding + col * cellSize - 4, padding + row * cellSize - 4, 2, padding + col * cellSize, padding + row * cellSize, 13);
+        if (color === 1) { grad.addColorStop(0, '#666'); grad.addColorStop(1, '#000'); }
+        else { grad.addColorStop(0, '#fff'); grad.addColorStop(1, '#ccc'); }
+        ctx.fillStyle = grad;
+        ctx.fill();
+        ctx.stroke();
+    }
 
-# 🔓 화면 전환용 로그아웃 (좌석 유지)
-def logout_only():
-    st.session_state.login_user = None
-    st.session_state.select_mode = False
-    st.rerun()
+    function startTimer() {
+        clearInterval(timerInterval);
+        timeLeft = LIMIT_TIME;
+        timerDisplay.innerText = timeLeft;
+        timerInterval = setInterval(() => {
+            timeLeft--;
+            timerDisplay.innerText = timeLeft;
+            if (timeLeft <= 0) endGame(turn === 1 ? 2 : 1, true);
+        }, 1000);
+    }
 
-# 🪑 좌석 선택 확정
-def select_seat(r, c):
-    user = st.session_state.login_user
+    function checkWin(r, c) {
+        const directions = [[1,0], [0,1], [1,1], [1,-1]];
+        for (let [dr, dc] of directions) {
+            let count = 1;
+            let nr = r + dr, nc = c + dc;
+            while (nr >= 0 && nr < size && nc >= 0 && nc < size && board[nr][nc] === turn) { count++; nr += dr; nc += dc; }
+            nr = r - dr; nc = c - dc;
+            while (nr >= 0 && nr < size && nc >= 0 && nc < size && board[nr][nc] === turn) { count++; nr -= dr; nc -= dc; }
+            if (count >= 5) return true;
+        }
+        return false;
+    }
 
-    if user in st.session_state.user_seat:
-        st.warning("이미 좌석을 사용 중입니다.")
-        return
+    function endGame(winner, isTimeOut = false) {
+        clearInterval(timerInterval);
+        gameOver = true;
+        if (winner === 1) { scoreBlack++; scoreBlackDisplay.innerText = scoreBlack; }
+        else { scoreWhite++; scoreWhiteDisplay.innerText = scoreWhite; }
+        winText.innerText = (winner === 1 ? "흑색" : "백색") + (isTimeOut ? " 시간초과 승리!" : " 승리!");
+        winOverlay.style.display = 'flex';
+    }
 
-    st.session_state.seats[r][c] = USED
-    st.session_state.user_seat[user] = (r, c)
+    canvas.onclick = function(e) {
+        if (gameOver) return;
+        const rect = canvas.getBoundingClientRect();
+        const x = e.clientX - rect.left - padding;
+        const y = e.clientY - rect.top - padding;
+        const col = Math.round(x / cellSize);
+        const row = Math.round(y / cellSize);
 
-    st.success(f"{user}님 좌석 배정 완료!")
-    st.info("다음 이용자를 위해 화면이 초기화됩니다.")
+        if (row >= 0 && row < size && col >= 0 && col < size && board[row][col] === 0) {
+            board[row][col] = turn;
+            drawStone(row, col, turn);
+            if (checkWin(row, col)) { endGame(turn); }
+            else { turn = turn === 1 ? 2 : 1; status.innerText = (turn === 1 ? "흑색" : "백색") + " 차례"; startTimer(); }
+        }
+    };
 
-    logout_only()
+    window.resetGame = function() {
+        board = Array.from({ length: size }, () => Array(size).fill(0));
+        turn = 1; gameOver = false;
+        winOverlay.style.display = 'none';
+        status.innerText = "흑색 차례";
+        drawBoard(); startTimer();
+    };
 
-# 🪑 좌석 선택 화면
-def show_seats():
-    st.subheader("좌석 선택")
+    window.resetTotalScore = function() {
+        scoreBlack = 0; scoreWhite = 0;
+        scoreBlackDisplay.innerText = "0"; scoreWhiteDisplay.innerText = "0";
+        resetGame();
+    };
 
-    # ⬅ 뒤로가기 버튼
-    if st.button("⬅ 뒤로가기"):
-        st.session_state.select_mode = False
-        st.rerun()
+    drawBoard();
+    startTimer();
+</script>
+"""
 
-    st.caption("□ : 빈 좌석 / ■ : 사용 중")
-
-    for r in range(ROWS):
-        cols = st.columns(COLS)
-        for c in range(COLS):
-            if st.session_state.seats[r][c] == EMPTY:
-                cols[c].button("□", key=f"{r}-{c}", on_click=select_seat, args=(r, c))
-            else:
-                cols[c].button("■", disabled=True, key=f"{r}-{c}")
-
-# 🚪 퇴실 처리
-def checkout(user_id):
-    if user_id in st.session_state.user_seat:
-        r, c = st.session_state.user_seat[user_id]
-        st.session_state.seats[r][c] = EMPTY
-        del st.session_state.user_seat[user_id]
-        st.success(f"{user_id} 퇴실 처리 완료")
-    else:
-        st.warning("해당 사용자는 좌석을 사용 중이 아닙니다.")
-
-# =====================
-# UI 시작
-# =====================
-st.title("📌 스터디카페 키오스크")
-
-# ---------- 로그인 상태 ----------
-if st.session_state.login_user:
-    st.info(f"👤 현재 사용자: {st.session_state.login_user}")
-
-    # 이미 좌석 사용 중
-    if st.session_state.login_user in st.session_state.user_seat:
-        st.success("이미 좌석이 배정되어 있습니다.")
-        st.button("로그아웃", on_click=logout_only)
-
-    # 좌석 선택 모드
-    elif st.session_state.select_mode:
-        show_seats()
-
-    # 로그인 후 메인 화면
-    else:
-        st.button("좌석 선택", on_click=lambda: st.session_state.update({"select_mode": True}))
-        st.button("로그아웃", on_click=logout_only)
-
-# ---------- 비로그인 ----------
-else:
-    menu = st.radio("메뉴 선택", ["로그인", "회원가입", "퇴실(관리자)"])
-
-    if menu == "로그인":
-        uid = st.text_input("ID")
-        pw = st.text_input("PW", type="password")
-
-        if st.button("로그인"):
-            if uid in st.session_state.users and st.session_state.users[uid] == pw:
-                st.session_state.login_user = uid
-                st.session_state.select_mode = False
-                st.rerun()
-            else:
-                st.error("ID 또는 PW가 틀렸습니다.")
-
-    elif menu == "회원가입":
-        uid = st.text_input("새 ID")
-        pw = st.text_input("새 PW", type="password")
-
-        if st.button("회원가입"):
-            if uid == "" or pw == "":
-                st.warning("ID와 PW를 모두 입력하세요.")
-            elif uid in st.session_state.users:
-                st.error("이미 존재하는 ID입니다.")
-            else:
-                st.session_state.users[uid] = pw
-                st.success("회원가입 완료! 로그인해주세요.")
-
-    else:
-        out_id = st.text_input("퇴실할 ID")
-        if st.button("퇴실"):
-            checkout(out_id)
+# 3. Streamlit에 HTML 코드 주입 (height는 넉넉하게 800)
+components.html(omok_html, height=800)
